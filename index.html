@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Server Maintenance Tool</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-database"></i>
+                <h1>SQL Server Maintenance Tool</h1>
+            </div>
+            <p class="subtitle">Upload server list and execute database optimization</p>
+        </header>
+
+        <main class="main-content">
+            <!-- Upload Section -->
+            <section class="upload-section" id="uploadSection">
+                <div class="upload-card">
+                    <div class="upload-icon">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                    </div>
+                    <h2>Upload Server List</h2>
+                    <p>Upload an Excel file containing server names in the first column</p>
+                    
+                    <div class="file-input-wrapper">
+                        <input type="file" id="fileInput" accept=".xlsx,.xls" class="file-input">
+                        <label for="fileInput" class="file-input-label">
+                            <i class="fas fa-file-excel"></i>
+                            <span>Choose Excel File</span>
+                        </label>
+                    </div>
+                    
+                    <div class="file-info hidden" id="fileInfo">
+                        <div class="file-details">
+                            <span class="file-name"></span>
+                            <span class="file-size"></span>
+                        </div>
+                        <button class="btn btn-primary" id="startProcess">
+                            <i class="fas fa-play"></i>
+                            Start Processing
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Progress Section -->
+            <section class="progress-section hidden" id="progressSection">
+                <div class="progress-header">
+                    <h2><i class="fas fa-tasks"></i> Processing Progress</h2>
+                    <div class="progress-stats">
+                        <span id="overallProgress">0%</span>
+                        <span id="elapsedTime">00:00:00</span>
+                    </div>
+                </div>
+
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="overallProgressBar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                </div>
+
+                <div class="server-list" id="serverList">
+                    <!-- Server progress items will be added here dynamically -->
+                </div>
+
+                <div class="console-output" id="consoleOutput">
+                    <div class="console-header">
+                        <span>Execution Log</span>
+                        <button class="btn btn-sm" id="clearLog">
+                            <i class="fas fa-trash"></i>
+                            Clear
+                        </button>
+                    </div>
+                    <div class="console-content" id="consoleContent">
+                        <!-- Console output will be added here -->
+                    </div>
+                </div>
+
+                <div class="control-buttons">
+
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section hidden" id="resultsSection">
+                <div class="results-header">
+                    <h2><i class="fas fa-chart-line"></i> Results Summary</h2>
+                    <div class="export-buttons">
+                        <button class="btn btn-secondary" id="exportLogs">
+                            <i class="fas fa-download"></i>
+                            Export Logs
+                        </button>
+                        <button class="btn btn-primary" id="exportResults">
+                            <i class="fas fa-file-excel"></i>
+                            Export Results
+                        </button>
+                    </div>
+                </div>
+
+                <div class="results-grid">
+                    <div class="result-card">
+                        <div class="result-icon success">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="result-content">
+                            <h3 id="successCount">0</h3>
+                            <p>Successful Servers</p>
+                        </div>
+                    </div>
+
+                    <div class="result-card">
+                        <div class="result-icon error">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="result-content">
+                            <h3 id="errorCount">0</h3>
+                            <p>Failed Servers</p>
+                        </div>
+                    </div>
+
+                    <div class="result-card">
+                        <div class="result-icon info">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="result-content">
+                            <h3 id="totalTime">00:00:00</h3>
+                            <p>Total Time</p>
+                        </div>
+                    </div>
+
+                    <div class="result-card">
+                        <div class="result-icon savings">
+                            <i class="fas fa-hdd"></i>
+                        </div>
+                        <div class="result-content">
+                            <h3 id="totalSavings">0 GB</h3>
+                            <p>Space Saved</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="detailed-results">
+                    <h3>Detailed Results by Server</h3>
+                    <div class="results-table-container">
+                        <table class="results-table" id="resultsTable">
+                            <thead>
+                                <tr>
+                                    <th>Server</th>
+                                    <th>Status</th>
+                                    <th>Initial Size</th>
+                                    <th>Final Size</th>
+                                    <th>Space Saved</th>
+                                    <th>Reduction %</th>
+                                    <th>Duration</th>
+                                    <th>Stopped AsyncNew</th>
+                                    <th>Started AsyncNew</th>
+                                </tr>
+                            </thead>
+                            <tbody id="resultsTableBody">
+                                <!-- Results will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn btn-primary" id="newProcess">
+                        <i class="fas fa-plus"></i>
+                        New Process
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay hidden" id="loadingOverlay">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+                <p>Processing servers...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
