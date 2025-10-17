@@ -37,9 +37,9 @@ DEFAULT_CONFIG = {
     'database': 'POSDBIR',
     'username': 'apposcr',
     'password': '2#06A9a',
-    'query_timeout': 900,
-    'server_timeout': 1800,
-    'connect_timeout': 30  # connection timeout in seconds (1 minute)
+    # 'query_timeout': 900,  # Removed timeout
+    # 'server_timeout': 1800,  # Removed timeout
+    # 'connect_timeout': 30  # Removed timeout
 }
 
 # Global variables for processing state
@@ -92,10 +92,8 @@ def suppress_print():
         sys.stdout.close()
         sys.stdout = original_stdout
 
-def get_connection(server, config, timeout=None):
-    """Get or create a database connection for a server"""
-    # Use provided timeout or config value; default to 60 seconds
-    timeout = timeout or config.get('connect_timeout', 60)
+def get_connection(server, config):
+    """Get or create a database connection for a server (no timeout)"""
     conn_key = f"conn_{server}"
     if hasattr(thread_local, conn_key):
         conn = getattr(thread_local, conn_key)
@@ -106,22 +104,19 @@ def get_connection(server, config, timeout=None):
             return conn
         except:
             delattr(thread_local, conn_key)
-    
-    conn_str = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={config["database"]};UID={config["username"]};PWD={config["password"]};Connection Timeout={timeout};autocommit=True'
+    conn_str = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={config["database"]};UID={config["username"]};PWD={config["password"]};autocommit=True'
     try:
-        new_conn = pyodbc.connect(conn_str, timeout=timeout)
+        new_conn = pyodbc.connect(conn_str)
     except Exception as e:
-        # Log the specific connection error and re-raise
         error_msg = str(e)
         if "could not open a connection to sql server" in error_msg.lower():
-            raise ServerOfflineError(f"Could not open connection to SQL Server within {timeout} seconds: {error_msg}")
+            raise ServerOfflineError(f"Could not open connection to SQL Server: {error_msg}")
         elif "server was not found" in error_msg.lower():
-            raise ServerOfflineError(f"Server not found or not accessible within {timeout} seconds: {error_msg}")
+            raise ServerOfflineError(f"Server not found or not accessible: {error_msg}")
         elif "login failed" in error_msg.lower():
             raise ServerOfflineError(f"Login failed for server: {error_msg}")
         else:
-            raise ServerOfflineError(f"Connection error (timeout {timeout}s): {error_msg}")
-    
+            raise ServerOfflineError(f"Connection error: {error_msg}")
     setattr(thread_local, conn_key, new_conn)
     return new_conn
 
@@ -163,21 +158,22 @@ def batch_and_execute_optimized(server, statements, label, config):
 
     success_count = 0
     error_count = 0
+    results = []
 
     with ThreadPoolExecutor(max_workers=min(len(statements), 16)) as executor:
         futures = {executor.submit(execute_statement, server, stmt, idx+1, len(statements), config): idx 
                   for idx, stmt in enumerate(statements)}
-        
         for future in as_completed(futures):
             result = future.result()
+            results.append(result)
             if result['success']:
                 success_count += 1
             else:
                 error_count += 1
-            
-            # Update progress every 10 statements
-            if (success_count + error_count) % 10 == 0:
-                log_message(f"[{server}] Progress: {success_count + error_count}/{len(statements)} completed...", 'info')
+
+    # After all statements are executed, print/log all results
+    for result in results:
+        log_message(result['message'], 'success' if result['success'] else 'error')
 
     elapsed = time.time() - start
     log_message(f"[{server}] {label} completed: {success_count} succeeded, {error_count} failed in {elapsed:.2f} seconds", 'info')
@@ -246,13 +242,12 @@ def check_compression_status(server, cursor):
         return False
 
 def stop_asyncnew_service(server, config):
-    """Stop AsyncNew service before processing"""
+    """Stop AsyncNew service before processing (no timeout)"""
     log_message(f"[{server}] Stopping AsyncNew service...", 'info')
-    conn_timeout = config.get('connect_timeout', 60)
-    conn_str = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={config["database"]};UID={config["username"]};PWD={config["password"]};Connection Timeout={conn_timeout};autocommit=True'
+    conn_str = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={config["database"]};UID={config["username"]};PWD={config["password"]};autocommit=True'
 
     try:
-        with pyodbc.connect(conn_str, timeout=conn_timeout, autocommit=True) as conn:
+        with pyodbc.connect(conn_str, autocommit=True) as conn:
             with conn.cursor() as cursor:
                 # Stop service sequence
                 log_message(f"[{server}] Enabling advanced options...", 'info')
@@ -284,13 +279,12 @@ def stop_asyncnew_service(server, config):
         return False
 
 def start_asyncnew_service(server, config):
-    """Start AsyncNew service after processing"""
+    """Start AsyncNew service after processing (no timeout)"""
     log_message(f"[{server}] Starting AsyncNew service...", 'info')
-    conn_timeout = config.get('connect_timeout', 60)
-    conn_str = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={config["database"]};UID={config["username"]};PWD={config["password"]};Connection Timeout={conn_timeout};autocommit=True'
+    conn_str = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={config["database"]};UID={config["username"]};PWD={config["password"]};autocommit=True'
 
     try:
-        with pyodbc.connect(conn_str, timeout=conn_timeout, autocommit=True) as conn:
+        with pyodbc.connect(conn_str, autocommit=True) as conn:
             with conn.cursor() as cursor:
                 # Start service sequence
                 log_message(f"[{server}] Enabling advanced options...", 'info')
@@ -322,13 +316,12 @@ def start_asyncnew_service(server, config):
         return False
 
 def run_posdbshrink(server, config):
-    """Execute POSDBSHRINK with improved error handling"""
+    """Execute POSDBSHRINK with improved error handling (no timeout)"""
     log_message(f"[{server}] Executing POSDBSHRINK...", 'info')
-    conn_timeout = config.get('connect_timeout', 60)
-    conn_str = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={config["database"]};UID={config["username"]};PWD={config["password"]};Connection Timeout={conn_timeout};autocommit=True'
+    conn_str = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={config["database"]};UID={config["username"]};PWD={config["password"]};autocommit=True'
 
     try:
-        with pyodbc.connect(conn_str, timeout=conn_timeout, autocommit=True) as conn:
+        with pyodbc.connect(conn_str, autocommit=True) as conn:
             with conn.cursor() as cursor:
                 log_message(f"[{server}] Running POSDBSHRINK...", 'info')
                 cursor.execute("EXEC POSDBSHRINK")
@@ -381,38 +374,45 @@ def process_server(server, config):
         # Initial size check
         log_message(f"[{server}] Checking initial database size...", 'info')
         initial_size = get_database_size(server, cursor, config)
+        log_message(f"[{server}] After initial size check", 'debug')
         if initial_size:
             log_message(f"[{server}] Initial DB size: {initial_size} KB ({initial_size / 1024 / 1024:.2f} GB)", 'info')
 
         # Check current compression status
         log_message(f"[{server}] Checking current compression status...", 'info')
         check_compression_status(server, cursor)
+        log_message(f"[{server}] After compression status check", 'debug')
 
         # Stop AsyncNew service before processing
         cursor.close()
         conn.close()
         time.sleep(2)
-        
+
         log_message(f"[{server}] Stopping AsyncNew service before processing...", 'info')
         stop_attempted = True
         stop_success = stop_asyncnew_service(server, config)
+        log_message(f"[{server}] After stop_asyncnew_service", 'debug')
         if not stop_success:
             log_message(f"[{server}] Warning: Failed to stop AsyncNew service", 'warning')
         # Publish stop result immediately so UI can reflect it
         try:
             with processing_state_lock:
-                existing = processing_state['results'].get(server, {})
-                existing['stopped_asyncnew'] = bool(stop_success)
-                existing['stopped_asyncnew_attempted'] = True
-                processing_state['results'][server] = existing
-        except Exception:
-            pass
-        
+                # Only update if there's already an entry for this server
+                # Don't create a new entry as that would make the frontend think processing is done
+                if server in processing_state['results']:
+                    existing = processing_state['results'][server]
+                    existing['stopped_asyncnew'] = bool(stop_success)
+                    existing['stopped_asyncnew_attempted'] = True
+                # Don't create a new entry - that would cause the frontend to think the server is done
+        except Exception as ex:
+            log_message(f"[{server}] Exception updating stopped_asyncnew: {ex}", 'error')
+
         # Reconnect after service stop - handle connection errors
         time.sleep(2)
         try:
             conn = get_connection(server, config)
             cursor = conn.cursor()
+            log_message(f"[{server}] After reconnect post stop_asyncnew_service", 'debug')
         except ServerOfflineError as conn_error:
             log_message(f"[{server}] Reconnection failed after service stop: {conn_error}", 'error')
             log_message(f"[{server}] Skipping server due to connection error", 'warning')
@@ -430,25 +430,28 @@ def process_server(server, config):
 
         # Optimized query to fetch metadata
         log_message(f"[{server}] Fetching table and index metadata...", 'info')
-        cursor.execute("""
-        SET NOCOUNT ON;
-        SELECT 
-            s.name AS schema_name,
-            o.name AS object_name,
-            i.name AS index_name,
-            i.index_id,
-            o.object_id,
-            ps.reserved_page_count
-        FROM sys.objects o
-        JOIN sys.indexes i ON o.object_id = i.object_id
-        JOIN sys.schemas s ON o.schema_id = s.schema_id
-        JOIN sys.dm_db_partition_stats ps ON i.object_id = ps.object_id AND ps.index_id = i.index_id
-        WHERE o.type = 'U' AND i.index_id >= 0
-        ORDER BY ps.reserved_page_count DESC
-        """)
-        
-        rows = cursor.fetchall()
-        log_message(f"[{server}] Found {len(rows)} tables/indexes across database", 'info')
+        try:
+            cursor.execute("""
+            SET NOCOUNT ON;
+            SELECT 
+                s.name AS schema_name,
+                o.name AS object_name,
+                i.name AS index_name,
+                i.index_id,
+                o.object_id,
+                ps.reserved_page_count
+            FROM sys.objects o
+            JOIN sys.indexes i ON o.object_id = i.object_id
+            JOIN sys.schemas s ON o.schema_id = s.schema_id
+            JOIN sys.dm_db_partition_stats ps ON i.object_id = ps.object_id AND ps.index_id = i.index_id
+            WHERE o.type = 'U' AND i.index_id >= 0
+            ORDER BY ps.reserved_page_count DESC
+            """)
+            rows = cursor.fetchall()
+            log_message(f"[{server}] Found {len(rows)} tables/indexes across database", 'info')
+        except Exception as ex:
+            log_message(f"[{server}] Exception during metadata fetch: {ex}", 'error')
+            rows = []
 
         object_id_to_schema_table = {}
         seen_tables = set()
@@ -482,42 +485,59 @@ def process_server(server, config):
 
         log_message(f"[{server}] Generated {len(alter_index_statements)} ALTER INDEX statements", 'info')
         log_message(f"[{server}] Generated {len(alter_table_statements)} ALTER TABLE statements", 'info')
+        log_message(f"[{server}] After statement generation", 'debug')
 
         # Execute ALTER INDEX statements
         if alter_index_statements:
             log_message(f"[{server}] Executing ALTER INDEX statements...", 'info')
-            success_count, error_count = batch_and_execute_optimized(server, alter_index_statements, "ALTER INDEX", config)
-            if error_count > 0:
-                log_message(f"[{server}] Warning: {error_count} ALTER INDEX statements failed", 'warning')
+            try:
+                success_count, error_count = batch_and_execute_optimized(server, alter_index_statements, "ALTER INDEX", config)
+                log_message(f"[{server}] After ALTER INDEX execution", 'debug')
+                if error_count > 0:
+                    log_message(f"[{server}] Warning: {error_count} ALTER INDEX statements failed", 'warning')
+            except Exception as ex:
+                log_message(f"[{server}] Exception during ALTER INDEX execution: {ex}", 'error')
         else:
             log_message(f"[{server}] No ALTER INDEX statements to execute", 'info')
 
         # Execute ALTER TABLE statements
         if alter_table_statements:
             log_message(f"[{server}] Executing ALTER TABLE statements...", 'info')
-            success_count, error_count = batch_and_execute_optimized(server, alter_table_statements, "ALTER TABLE", config)
-            if error_count > 0:
-                log_message(f"[{server}] Warning: {error_count} ALTER TABLE statements failed", 'warning')
+            try:
+                success_count, error_count = batch_and_execute_optimized(server, alter_table_statements, "ALTER TABLE", config)
+                log_message(f"[{server}] After ALTER TABLE execution", 'debug')
+                if error_count > 0:
+                    log_message(f"[{server}] Warning: {error_count} ALTER TABLE statements failed", 'warning')
+            except Exception as ex:
+                log_message(f"[{server}] Exception during ALTER TABLE execution: {ex}", 'error')
         else:
             log_message(f"[{server}] No ALTER TABLE statements to execute", 'info')
 
         # Run POSDBSHRINK multiple times
-        cursor.close()
-        conn.close()
+        try:
+            cursor.close()
+            conn.close()
+        except Exception as ex:
+            log_message(f"[{server}] Exception closing cursor/conn before POSDBSHRINK: {ex}", 'error')
         time.sleep(2)
-        
+
         log_message(f"[{server}] Running POSDBSHRINK multiple times for full size reduction...", 'info')
         for i in range(3):
             log_message(f"[{server}] POSDBSHRINK attempt {i+1}/3...", 'info')
-            success = run_posdbshrink(server, config)
-            if not success:
-                log_message(f"[{server}] POSDBSHRINK attempt {i+1} failed", 'error')
+            try:
+                success = run_posdbshrink(server, config)
+                log_message(f"[{server}] After POSDBSHRINK attempt {i+1}", 'debug')
+                if not success:
+                    log_message(f"[{server}] POSDBSHRINK attempt {i+1} failed", 'error')
+            except Exception as ex:
+                log_message(f"[{server}] Exception during POSDBSHRINK attempt {i+1}: {ex}", 'error')
             time.sleep(2)
 
         # Reconnect for remaining operations - handle connection errors
         try:
             conn = get_connection(server, config)
             cursor = conn.cursor()
+            log_message(f"[{server}] After reconnect post POSDBSHRINK", 'debug')
         except ServerOfflineError as conn_error:
             log_message(f"[{server}] Reconnection failed after POSDBSHRINK: {conn_error}", 'error')
             log_message(f"[{server}] Skipping server due to connection error", 'warning')
@@ -533,13 +553,17 @@ def process_server(server, config):
 
         # Check compression status after operations
         log_message(f"[{server}] Verifying compression status after operations...", 'info')
-        check_compression_status(server, cursor)
+        try:
+            check_compression_status(server, cursor)
+            log_message(f"[{server}] After compression status check post operations", 'debug')
+        except Exception as ex:
+            log_message(f"[{server}] Exception during compression status check post operations: {ex}", 'error')
 
         # Generate UPDATE STATISTICS statements
         log_message(f"[{server}] Generating UPDATE STATISTICS statements...", 'info')
         stats_statements = []
         seen_stats_tables = set()
-        
+
         for object_id in seen_tables:
             schema_name, object_name = object_id_to_schema_table[object_id]
             table_key = f"{schema_name}.{object_name}"
@@ -549,47 +573,68 @@ def process_server(server, config):
                 seen_stats_tables.add(table_key)
 
         log_message(f"[{server}] Generated {len(stats_statements)} UPDATE STATISTICS statements", 'info')
-        
+        log_message(f"[{server}] After UPDATE STATISTICS statement generation", 'debug')
+
         # Execute UPDATE STATISTICS statements
         if stats_statements:
-            success_count, error_count = batch_and_execute_optimized(server, stats_statements, "UPDATE STATISTICS", config)
-            if error_count > 0:
-                log_message(f"[{server}] Warning: {error_count} UPDATE STATISTICS statements failed", 'warning')
+            try:
+                success_count, error_count = batch_and_execute_optimized(server, stats_statements, "UPDATE STATISTICS", config)
+                log_message(f"[{server}] After UPDATE STATISTICS execution", 'debug')
+                if error_count > 0:
+                    log_message(f"[{server}] Warning: {error_count} UPDATE STATISTICS statements failed", 'warning')
+            except Exception as ex:
+                log_message(f"[{server}] Exception during UPDATE STATISTICS execution: {ex}", 'error')
         else:
             log_message(f"[{server}] No UPDATE STATISTICS statements to execute", 'info')
 
         # Final size check
         log_message(f"[{server}] Checking final database size...", 'info')
-        final_size = get_database_size(server, cursor, config)
-        if final_size:
-            log_message(f"[{server}] Final DB size: {final_size} KB ({final_size / 1024 / 1024:.2f} GB)", 'info')
-            if initial_size:
-                reduction = initial_size - final_size
-                reduction_pct = (reduction / initial_size) * 100 if initial_size > 0 else 0
-                log_message(f"[{server}] Size reduced by {reduction} KB ({reduction / 1024 / 1024:.2f} GB) - {reduction_pct:.2f}%", 'success')
-        else:
-            log_message(f"[{server}] Could not determine final database size", 'warning')
-        
+        try:
+            final_size = get_database_size(server, cursor, config)
+            log_message(f"[{server}] After final size check", 'debug')
+            if final_size:
+                log_message(f"[{server}] Final DB size: {final_size} KB ({final_size / 1024 / 1024:.2f} GB)", 'info')
+                if initial_size:
+                    reduction = initial_size - final_size
+                    reduction_pct = (reduction / initial_size) * 100 if initial_size > 0 else 0
+                    log_message(f"[{server}] Size reduced by {reduction} KB ({reduction / 1024 / 1024:.2f} GB) - {reduction_pct:.2f}%", 'success')
+            else:
+                log_message(f"[{server}] Could not determine final database size", 'warning')
+        except Exception as ex:
+            log_message(f"[{server}] Exception during final size check: {ex}", 'error')
+
         # Start AsyncNew service after processing
-        cursor.close()
-        conn.close()
+        try:
+            cursor.close()
+            conn.close()
+        except Exception as ex:
+            log_message(f"[{server}] Exception closing cursor/conn before start_asyncnew_service: {ex}", 'error')
         time.sleep(2)
-        
+
         log_message(f"[{server}] Starting AsyncNew service after processing...", 'info')
         start_attempted = True
-        start_success = start_asyncnew_service(server, config)
-        if not start_success:
-            log_message(f"[{server}] Warning: Failed to start AsyncNew service", 'warning')
+        try:
+            start_success = start_asyncnew_service(server, config)
+            log_message(f"[{server}] After start_asyncnew_service", 'debug')
+            if not start_success:
+                log_message(f"[{server}] Warning: Failed to start AsyncNew service", 'warning')
+        except Exception as ex:
+            start_success = False
+            log_message(f"[{server}] Exception during start_asyncnew_service: {ex}", 'error')
         # Publish start result immediately so UI can reflect it
         try:
             with processing_state_lock:
-                existing = processing_state['results'].get(server, {})
-                existing['started_asyncnew'] = bool(start_success)
-                existing['started_asyncnew_attempted'] = True
-                processing_state['results'][server] = existing
-        except Exception:
-            pass
+                # Only update if there's already an entry for this server
+                # Don't create a new entry as that would make the frontend think processing is done
+                if server in processing_state['results']:
+                    existing = processing_state['results'][server]
+                    existing['started_asyncnew'] = bool(start_success)
+                    existing['started_asyncnew_attempted'] = True
+                # Don't create a new entry - that would cause the frontend to think the server is done
+        except Exception as ex:
+            log_message(f"[{server}] Exception updating started_asyncnew: {ex}", 'error')
 
+        log_message(f"[{server}] Returning SUCCESS result", 'debug')
         return {
             'status': 'SUCCESS',
             'initial_size': initial_size,
@@ -664,28 +709,22 @@ def process_servers_async(servers):
         return
     
     log_message("Starting SQL maintenance...", 'info')
-    log_message(f"Query timeout: {config['query_timeout']} seconds", 'info')
-    log_message(f"Server timeout: {config['server_timeout']} seconds", 'info')
+    # log_message(f"Query timeout: {config['query_timeout']} seconds", 'info')
+    # log_message(f"Server timeout: {config['server_timeout']} seconds", 'info')
     
     try:
         # Use ThreadPoolExecutor for parallel processing
         # Set max_workers to the number of servers for true parallel execution
         max_workers = min(len(servers), 50)  # Cap at 50 to prevent resource exhaustion
-        
         log_message(f"Starting parallel processing of {len(servers)} servers with {max_workers} worker threads", 'info')
-        
         try:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # Submit all servers for parallel processing
                 future_to_server = {executor.submit(process_server, server, config): server for server in servers}
                 log_message(f"All {len(servers)} servers submitted for parallel processing", 'success')
-                
-                # Process results as they complete
                 for future in as_completed(future_to_server):
                     server = future_to_server[future]
                     try:
-                        result = future.result(timeout=config['server_timeout'])
-                        # Ensure stopped/started flags exist on the result for UI/exports
+                        result = future.result()  # No timeout
                         result.setdefault('stopped_asyncnew', False)
                         result.setdefault('started_asyncnew', False)
                         with processing_state_lock:
@@ -694,19 +733,6 @@ def process_servers_async(servers):
                             log_message(f"[{server}] Connection failed - server skipped", 'warning')
                         else:
                             log_message(f"[{server}] Parallel processing completed successfully", 'success')
-                    except TimeoutError:
-                        log_message(f"[{server}] Timeout during parallel processing: Server took too long, skipping...", 'error')
-                        with processing_state_lock:
-                            processing_state['results'][server] = {
-                                'status': 'TIMEOUT',
-                                'initial_size': None,
-                                'final_size': None,
-                                'duration': config['server_timeout'],
-                                'stopped_asyncnew': False,
-                                'stopped_asyncnew_attempted': False,
-                                'started_asyncnew': False,
-                                'started_asyncnew_attempted': False
-                            }
                     except Exception as e:
                         error_msg = str(e)
                         if "connection" in error_msg.lower() or "server" in error_msg.lower():
@@ -716,12 +742,12 @@ def process_servers_async(servers):
                                     'status': 'CONNECTION_FAILED',
                                     'initial_size': None,
                                     'final_size': None,
-                                                                        'duration': 0,
-                                                                        'error': error_msg,
-                                                                        'stopped_asyncnew': False,
-                                                                        'stopped_asyncnew_attempted': False,
-                                                                        'started_asyncnew': False,
-                                                                        'started_asyncnew_attempted': False
+                                    'duration': 0,
+                                    'error': error_msg,
+                                    'stopped_asyncnew': False,
+                                    'stopped_asyncnew_attempted': False,
+                                    'started_asyncnew': False,
+                                    'started_asyncnew_attempted': False
                                 }
                         else:
                             log_message(f"[{server}] Exception during parallel processing: {error_msg}", 'error')
@@ -730,34 +756,27 @@ def process_servers_async(servers):
                                     'status': 'FAILED',
                                     'initial_size': None,
                                     'final_size': None,
-                                        'duration': 0,
-                                        'error': error_msg,
-                                        'stopped_asyncnew': False,
-                                        'stopped_asyncnew_attempted': False,
-                                        'started_asyncnew': False,
-                                        'started_asyncnew_attempted': False
+                                    'duration': 0,
+                                    'error': error_msg,
+                                    'stopped_asyncnew': False,
+                                    'stopped_asyncnew_attempted': False,
+                                    'started_asyncnew': False,
+                                    'started_asyncnew_attempted': False
                                 }
-                    
-                    # Update progress for completed servers (including failed ones)
                     with processing_state_lock:
-                        completed_count = len(processing_state['results'])
-                        # Avoid division by zero
+                        # Count only servers that have actually completed (have a status field)
+                        completed_count = sum(1 for result in processing_state['results'].values() if 'status' in result)
                         if len(servers) > 0:
                             processing_state['progress'] = (completed_count / len(servers)) * 100
                         else:
                             processing_state['progress'] = 100
                         log_message(f"Parallel processing progress: {completed_count}/{len(servers)} servers completed ({processing_state['progress']:.1f}%)", 'info')
-                        
-                        # If all servers are processed, ensure is_processing is set to False
                         if completed_count >= len(servers):
                             log_message(f"All servers processed, setting is_processing to False", 'info')
                             processing_state['is_processing'] = False
-                            
-                        # Log current state for debugging
                         log_message(f"Current state: {completed_count}/{len(servers)} completed, is_processing={processing_state['is_processing']}", 'info')
         except Exception as executor_error:
             log_message(f"Error with ThreadPoolExecutor: {executor_error}", 'error')
-            # Ensure is_processing is set to False even if there's an error with the executor
             with processing_state_lock:
                 processing_state['is_processing'] = False
         
