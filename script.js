@@ -93,6 +93,9 @@ async function parseExcelFile(file) {
         const formData = new FormData();
         formData.append('file', file);
         
+        // Log the file being uploaded
+        console.log('Uploading file:', file.name);
+        
         // Upload file to backend
         const response = await fetch('/api/upload', {
             method: 'POST',
@@ -194,6 +197,8 @@ async function processServers() {
     const timerInterval = setInterval(updateTimer, 1000);
     
     try {
+        console.log('Starting processing with servers:', servers);
+        
         // Start backend processing
         const response = await fetch('/api/process', {
             method: 'POST',
@@ -220,25 +225,61 @@ async function processServers() {
                 try {
                     const statusResponse = await fetch('/api/status');
                     if (statusResponse.ok) {
-                        const statusData = await statusResponse.json();
-                        updateProgressFromBackend(statusData);
+                        const statusData = await statusResponse.json() || {};
+                        
+                        // Ensure all required properties exist with defaults
+                        const safeStatusData = {
+                            is_processing: statusData.is_processing || false,
+                            results: statusData.results || {},
+                            servers: statusData.servers || [],
+                            current_server: statusData.current_server || null,
+                            logs: statusData.logs || [],
+                            progress: statusData.progress || 0
+                        };
+                        
+                        updateProgressFromBackend(safeStatusData);
                         
                         // Debug information
                         console.log('Status check:', {
-                            is_processing: statusData.is_processing,
-                            processedServers: Object.keys(statusData.results).length,
-                            totalServers: statusData.servers.length,
-                            results: statusData.results
+                            is_processing: safeStatusData.is_processing,
+                            processedServers: Object.keys(safeStatusData.results).length,
+                            totalServers: safeStatusData.servers.length,
+                            results: safeStatusData.results
                         });
                         
                         // Check if all servers have been processed (including failed ones)
                         const processedServers = Object.keys(statusData.results).length;
                         const totalServers = statusData.servers.length;
                         
+                        // Safely get results and check counts
+                        const currentResults = statusData.results || {};
+                        const currentServers = statusData.servers || [];
+                        const processedCount = Object.keys(currentResults).length;
+                        const totalCount = currentServers.length;
+                        
+                        // Check if all servers have actually completed processing
+                        // A server is considered completed if it has a status field
+                        let actuallyCompletedCount = 0;
+                        for (const server in currentResults) {
+                            if (currentResults[server].hasOwnProperty('status')) {
+                                actuallyCompletedCount++;
+                            }
+                        }
+
+                        // Log current processing status with safe values
+                        console.log('Processing status:', {
+                            isProcessing: statusData.is_processing === true,
+                            processedServers: processedCount,
+                            actuallyCompletedCount: actuallyCompletedCount,
+                            totalServers: totalCount,
+                            results: Object.keys(currentResults),
+                            servers: currentServers
+                        });
+                        
                         // Transition to results view when all servers are processed or when processing is stopped
                         // Also transition if there are no servers to process
-                        if (!statusData.is_processing || processedServers >= totalServers || totalServers === 0) {
-                            logToConsole(`Transitioning to results: is_processing=${statusData.is_processing}, processed=${processedServers}/${totalServers}`, 'info');
+                        if (statusData.is_processing === false || actuallyCompletedCount >= totalCount || totalCount === 0) {
+                            logToConsole(`Transitioning to results: is_processing=${statusData.is_processing}, actually_completed=${actuallyCompletedCount}/${totalCount}`, 'info');
                             clearInterval(statusInterval);
                             clearInterval(timerInterval);
                             isProcessing = false;
@@ -301,6 +342,10 @@ function updateProgressFromBackend(statusData) {
     overallProgress.textContent = Math.round(statusData.progress) + '%';
     progressFill.style.width = statusData.progress + '%';
     
+    // Safely get results and current server
+    const results = statusData.results || {};
+    const currentServer = statusData.current_server || null;
+
     // Update server items based on backend data
     servers.forEach((server, index) => {
         const serverItem = document.getElementById(`server-${index}`);
@@ -310,17 +355,19 @@ function updateProgressFromBackend(statusData) {
         
         if (!serverItem) return;
         
-        // Update current server indicator
-        if (statusData.current_server === server) {
+        // Update current server indicator with null check
+        if (currentServer && currentServer === server) {
             serverItem.classList.add('processing');
         }
         
-        // Update server results if available
-        const result = statusData.results[server];
-        if (result) {
+        // Update server results if available, with safe access
+        const result = (statusData.results || {})[server];
+        if (result && typeof result === 'object') {
             serverItem.classList.remove('processing');
             
-            if (result.status === 'SUCCESS') {
+            // Ensure status exists and is a string before comparing
+            const status = (result.status || '').toString();
+            if (status === 'SUCCESS') {
                 serverItem.classList.add('completed');
                 statusElement.textContent = 'Completed Successfully';
                 
@@ -460,37 +507,52 @@ function populateResultsTable() {
     const tbody = document.getElementById('resultsTableBody');
     tbody.innerHTML = '';
     
+    // Log the current state for debugging
+    console.log('Populating results table:', {
+        servers: servers,
+        serverResults: serverResults,
+        serverData: serverData
+    });
+    
     servers.forEach(server => {
-        const result = serverResults[server] || {};
+        const result = serverResults[server] || {
+            status: 'UNKNOWN',
+            stopped_asyncnew_attempted: false,
+            started_asyncnew_attempted: false,
+            stopped_asyncnew: false,
+            started_asyncnew: false
+        };
         const excelData = serverData.find(s => s.name === server) || {};
         const row = document.createElement('tr');
         
-        const statusBadge = `<span class="status-badge ${result.status.toLowerCase()}">
-            <i class="fas fa-${getStatusIcon(result.status)}"></i>
-            ${result.status}
-        </span>`;
+        // Ensure status exists and is a string before using toLowerCase
+        const statusClass = ((result.status || 'UNKNOWN').toString()).toLowerCase();
+        const statusBadge = `<span class="status-badge ${statusClass}">` +
+            `<i class="fas fa-${getStatusIcon(result.status)}"></i>` +
+            `${result.status}` +
+        `</span>`;
         
         // Use Excel data if available, otherwise use processing results
         let initialSize, finalSize, savings, reduction;
         
         if (excelData.initial_size !== null && excelData.initial_size !== undefined) {
             // Use Excel data
-            initialSize = excelData.initial_size ? `${excelData.initial_size.toFixed(2)} GB` : '-';
-            finalSize = excelData.final_size ? `${excelData.final_size.toFixed(2)} GB` : '-';
-            savings = excelData.space_saved ? `${excelData.space_saved.toFixed(2)} GB` : '-';
-            reduction = excelData.reduction_percent ? `${excelData.reduction_percent.toFixed(1)}%` : '-';
+            initialSize = excelData.initial_size ? (excelData.initial_size.toFixed(2) + ' GB') : '-';
+            finalSize = excelData.final_size ? (excelData.final_size.toFixed(2) + ' GB') : '-';
+            savings = excelData.space_saved ? (excelData.space_saved.toFixed(2) + ' GB') : '-';
+            reduction = excelData.reduction_percent ? (excelData.reduction_percent.toFixed(1) + '%') : '-';
         } else {
             // Use processing results
-            initialSize = result.initial_size ? `${(result.initial_size / 1024 / 1024).toFixed(2)} GB` : '-';
-            finalSize = result.final_size ? `${(result.final_size / 1024 / 1024).toFixed(2)} GB` : '-';
+            initialSize = result.initial_size ? ((result.initial_size / 1024 / 1024).toFixed(2) + ' GB') : '-';
+            finalSize = result.final_size ? ((result.final_size / 1024 / 1024).toFixed(2) + ' GB') : '-';
             
             if (result.initial_size && result.final_size) {
                 const savingsKB = result.initial_size - result.final_size;
                 const savingsGB = savingsKB / 1024 / 1024;
                 const reductionPercent = (savingsKB / result.initial_size) * 100;
                 
-                savings = `${savingsGB.toFixed(2)} GB`;
-                reduction = `${reductionPercent.toFixed(1)}%`;
+                savings = savingsGB.toFixed(2) + ' GB';
+                reduction = reductionPercent.toFixed(1) + '%';
             } else {
                 savings = '-';
                 reduction = '-';
@@ -499,7 +561,7 @@ function populateResultsTable() {
         
         const duration = formatDuration((result.duration || 0) * 1000);
         
-        row.innerHTML = `
+        row.innerHTML = `<tr>
             <td>${server}</td>
             <td>${statusBadge}</td>
             <td>${initialSize}</td>
@@ -509,7 +571,7 @@ function populateResultsTable() {
             <td>${duration}</td>
             <td>${result.stopped_asyncnew_attempted ? (result.stopped_asyncnew ? 'Yes' : 'Attempted (Failed)') : 'No'}</td>
             <td>${result.started_asyncnew_attempted ? (result.started_asyncnew ? 'Yes' : 'Attempted (Failed)') : 'No'}</td>
-        `;
+        </tr>`;
         
         tbody.appendChild(row);
     });
@@ -604,8 +666,9 @@ function generateCSVData() {
             }
         }
         
-        const stoppedCol = excelData.stopped_asyncnew !== undefined ? (excelData.stopped_asyncnew ? 'Yes' : 'No') : (result.stopped_asyncnew_attempted ? (result.stopped_asyncnew ? 'Yes' : 'Attempted (Failed)') : 'No');
-        const startedCol = excelData.started_asyncnew !== undefined ? (excelData.started_asyncnew ? 'Yes' : 'No') : (result.started_asyncnew_attempted ? (result.started_asyncnew ? 'Yes' : 'Attempted (Failed)') : 'No');
+        // Enhanced handling of AsyncNew service status
+        const stoppedCol = result.stopped_asyncnew_attempted ? (result.stopped_asyncnew ? 'Yes' : 'Failed') : 'Not Attempted';
+        const startedCol = result.started_asyncnew_attempted ? (result.started_asyncnew ? 'Yes' : 'Failed') : 'Not Attempted';
 
         const row = [
             server,
