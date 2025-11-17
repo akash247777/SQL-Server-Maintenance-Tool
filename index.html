@@ -88,20 +88,7 @@
             </section>
 
             <!-- Results Section -->
-            <section class="results-section hidden" id="resultsSection">
-                <div class="results-header">
-                    <h2><i class="fas fa-chart-line"></i> Results Summary</h2>
-                    <div class="export-buttons">
-                        <button class="btn btn-secondary" id="exportLogs">
-                            <i class="fas fa-download"></i>
-                            Export Logs
-                        </button>
-                        <button class="btn btn-primary" id="exportResults">
-                            <i class="fas fa-file-excel"></i>
-                            Export Results
-                        </button>
-                    </div>
-                </div>
+
 
                 <div class="results-grid">
                     <div class="result-card">
@@ -144,9 +131,26 @@
                         </div>
                     </div>
                 </div>
+                <section class="results-section hidden" id="resultsSection">
+                <div class="results-header">
+                    <h2><i class="fas fa-chart-line"></i> Results Summary</h2>
+                    
+                </div>
 
                 <div class="detailed-results">
                     <h3>Detailed Results by Server</h3>
+                    <div class="export-buttons">
+                        <button class="btn btn-secondary" id="exportLogs">
+                            <i class="fas fa-download"></i>
+                            Export Logs
+                        </button>
+                        <button class="btn btn-primary" id="exportResults">
+                            <i class="fas fa-file-excel"></i>
+                            Export Results
+                        </button>
+                    </div>
+                    
+
                     <div class="results-table-container">
                         <table class="results-table" id="resultsTable">
                             <thead>
@@ -168,6 +172,8 @@
                         </table>
                     </div>
                 </div>
+
+
 
                 <div class="action-buttons">
                     <button class="btn btn-primary" id="newProcess">
